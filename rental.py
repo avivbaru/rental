@@ -24,6 +24,18 @@ class User(object):
     	rates = [int(i.get("rate")) for i in self.comments]
         self.rate = reduce(lambda x, y: x + y, rates) / float(len(rates))
 
+
+
 class Product(object):
-	def __init__(self, **kwargs):
-		self.
+	def __init__(self, name, category, **kwargs):
+		self.id = generate_id()
+        self.name = name
+        self.desciption = None
+        self.price = None
+        self.category = category
+        self.available = True
+        self.start_date = None
+        self.end_date = None
+
+    def generate_id():
+        return ""
