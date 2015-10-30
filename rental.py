@@ -1,7 +1,9 @@
-
+import time
+import json
 
 class User(object):
     def __init__(self, user_name, first_name, last_name, **kwargs):
+        self.user_id = None
         self.user_name = user_name
         self.first_name = first_name
         self.last_name = last_name
@@ -34,7 +36,15 @@ class Product(object):
         self.available = True
         self.start_date = None
         self.end_date = None
+        self.is_offer = True
+        self.user_id = None
+        self.submit_date = int(time.time())
 
     def generate_id(self):
         return ""
 
+    def __str__(self):
+         return json.dumps(self.__dict__)
+
+a=Product("tetes", "dsf")
+print a 
