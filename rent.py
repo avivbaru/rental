@@ -2,6 +2,8 @@ from flask import Flask, render_template, json, request, redirect
 from flask.ext.mysql import MySQL
 from werkzeug import generate_password_hash, check_password_hash
 from flask import session
+import uuid
+import os
 
 app = Flask(__name__)
 app.secret_key = 'why would I tell you my secret key?'
@@ -12,7 +14,146 @@ app.config['MYSQL_DATABASE_USER'] = 'root'
 app.config['MYSQL_DATABASE_PASSWORD'] = '123456'
 app.config['MYSQL_DATABASE_DB'] = 'BucketList'
 app.config['MYSQL_DATABASE_HOST'] = 'localhost'
+app.config['UPLOAD_FOLDER'] = 'static/Uploads'
+
 mysql.init_app(app)
+
+pageLimit = 6
+
+
+
+@app.route('/getAllRequests')
+def getAllRequests():
+    try:
+        if session.get('user'):
+             
+            conn = mysql.connect()
+            cursor = conn.cursor()
+            cursor.callproc('sp_GetAllRequests')
+            result = cursor.fetchall()
+         
+ 
+         
+            wishes_dict = []
+            for wish in result:
+                wish_dict = {
+                        'Id': wish[0],
+                        'Title': wish[1],
+                        'Description': wish[2],
+                        'FilePath': wish[3],
+                        'Price': wish[5]}
+                wishes_dict.append(wish_dict)       
+ 
+            
+ 
+            return json.dumps(wishes_dict)
+        else:
+            return render_template('error.html', error = 'Unauthorized Access')
+    except Exception as e:
+        return render_template('error.html',error = str(e))
+
+
+@app.route('/getAllOffers')
+def getAllOffers():
+    try:
+        if session.get('user'):
+             
+            conn = mysql.connect()
+            cursor = conn.cursor()
+            cursor.callproc('sp_GetAllOffers')
+            result = cursor.fetchall()
+         
+ 
+         
+            wishes_dict = []
+            for wish in result:
+                wish_dict = {
+                        'Id': wish[0],
+                        'Title': wish[1],
+                        'Description': wish[2],
+                        'FilePath': wish[3],
+                        'Price': wish[5]}
+                wishes_dict.append(wish_dict)       
+ 
+            
+ 
+            return json.dumps(wishes_dict)
+        else:
+            return render_template('error.html', error = 'Unauthorized Access')
+    except Exception as e:
+        return render_template('error.html',error = str(e))
+
+@app.route('/showDashboard')
+def showDashboard():
+    return render_template('dashboard.html')
+
+
+@app.route('/upload', methods=['GET', 'POST'])
+def upload():
+    if request.method == 'POST':
+        file = request.files['file']
+        extension = file.filename.split(".")[-1]
+        f_name = str(uuid.uuid4()) + "." + extension
+        file.save(os.path.join(app.config['UPLOAD_FOLDER'], f_name))
+        return json.dumps({'filename':f_name})
+
+
+@app.route('/deleteWish',methods=['POST'])
+def deleteWish():
+    try:
+        if session.get('user'):
+            _id = request.form['id']
+            _user = session.get('user')
+ 
+            conn = mysql.connect()
+            cursor = conn.cursor()
+            cursor.callproc('sp_deleteWish',(_id,_user))
+            result = cursor.fetchall()
+ 
+            if len(result) is 0:
+                conn.commit()
+                return json.dumps({'status':'OK'})
+            else:
+                return json.dumps({'status':'An Error occured'})
+        else:
+            return render_template('error.html',error = 'Unauthorized Access')
+    except Exception as e:
+        return json.dumps({'status':str(e)})
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@app.route('/updateWish', methods=['POST'])
+def updateWish():
+    try:
+        if session.get('user'):
+            _user = session.get('user')
+            _title = request.form['title']
+            _description = request.form['description']
+            _price = request.form['price']
+            _wish_id = request.form['id']
+            _filePath = request.form['filePath']
+            _isOffer = request.form['isOffer']
+            _isDone = request.form['isDone']
+ 
+ 
+            conn = mysql.connect()
+            cursor = conn.cursor()
+            cursor.callproc('sp_updateWish',(_title,_description,_wish_id,_user,_filePath,_price,_isOffer,_isDone))
+            data = cursor.fetchall()
+ 
+            if len(data) is 0:
+                conn.commit()
+                return json.dumps({'status':'OK'})
+            else:
+                return json.dumps({'status':'ERROR'})
+    except Exception as e:
+        return json.dumps({'status':'Unauthorized access'})
+    finally:
+        cursor.close()
+        conn.close()
+
 
 @app.route('/getWishById',methods=['POST'])
 def getWishById():
@@ -26,9 +167,14 @@ def getWishById():
             cursor = conn.cursor()
             cursor.callproc('sp_GetWishById',(_id,_user))
             result = cursor.fetchall()
- 
             wish = []
-            wish.append({'Id':result[0][0],'Title':result[0][1],'Description':result[0][2]})
+            wish.append({'Id':result[0][0],
+                'Title':result[0][1],
+                'Description':result[0][2],
+                'FilePath':result[0][3],
+                'isOffer': result[0][4],
+                'Price': result[0][5],
+                'Done':result[0][6]})
  
             return json.dumps(wish)
         else:
@@ -37,30 +183,48 @@ def getWishById():
         return render_template('error.html',error = str(e))
 
 
-@app.route('/getWish')
+@app.route('/getWish',methods=['POST'])
 def getWish():
     try:
         if session.get('user'):
             _user = session.get('user')
+            _limit = pageLimit
+            _offset = request.form['offset']
+            _total_records = 0
 
             # Connect to MySQL and fetch data
             con = mysql.connect()
             cursor = con.cursor()
-            cursor.callproc('sp_GetWishByUser',(_user,))
+            cursor.callproc('sp_GetWishByUser',(_user,_limit,_offset,_total_records))
             wishes = cursor.fetchall()
 
+            cursor.close()
+
+            cursor = con.cursor()
+            cursor.execute('SELECT @_sp_GetWishByUser_3');
+
+            outParam = cursor.fetchall()
+
+ 
+            response = []
             wishes_dict = []
+            
             for wish in wishes:
                 wish_dict = {
                     'Id': wish[0],
                     'Title': wish[1],
                     'Description': wish[2],
-                    'Price': wish[4],
-                    'isOffer': wish[5],
-                    'Date': wish[6]}
+                    'FilePath':wish[3],
+                    'isOffer': wish[4],
+                    'Price': wish[5],
+                    'Done':wish[6]}
+
                 wishes_dict.append(wish_dict)
 
-            return json.dumps(wishes_dict)
+            response.append(wishes_dict)
+            response.append({'total':outParam[0][0]}) 
+ 
+            return json.dumps(response)
         else:
             return render_template('error.html', error = 'Unauthorized Access')
     except Exception as e:
@@ -75,12 +239,13 @@ def addWish():
             _description = request.form['inputDescription']
             _price = request.form['inputPrice']
             _user = session.get('user')
-            _isoffer = bool(request.form.get('isoffer', "False"))
-            _isoffer = 1 if _isoffer else 0
+            _isoffer = 1 if bool(request.form.get('isoffer', "False")) else 0
+            _filePath = request.form.get('filePath', '')
+            _done = 1 if request.form.get('done') else 0
 
             conn = mysql.connect()
             cursor = conn.cursor()
-            cursor.callproc('sp_addWish',(_title,_description,_user,_price,_isoffer))
+            cursor.callproc('sp_addWish',(_title,_description,_user,_filePath,_isoffer,_price))
             data = cursor.fetchall()
 
             if len(data) is 0:
@@ -126,7 +291,7 @@ def validateLogin():
             # still not working, the max length of columm password is not enouth
             if check_password_hash(str(data[0][3]),str(_password)):
                 session['user'] = data[0][0]
-                return redirect('/userHome')
+                return redirect('/showDashboard')
             else:
                 return render_template('error.html',error = 'Wrong Email address or Password.1')
         else:
